@@ -206,14 +206,19 @@ const vis: SunburstVisualization = {
         return color(d.ancestors().map((p: any) => p.data.name).slice(-2, -1))
       }
     }
-  
+
+    const minLabelWidth = 750
     const trail = d3.select("#sunburst-breadcrumbs").append("svg:svg")
-      .attr("width", 750)
+      .attr("width", minLabelWidth)
       .attr("height", 50)
       .attr("id", "trail")
     trail.append("svg:text")
     .attr("id", "endlabel")
     .style("fill", "#000");
+
+    const updateLabelWidth = function(w: number = 0) {
+      trail.attr("width", Math.max(minLabelWidth, w))
+    }
   
     const breadcrumbPoints = function(d: any, i: any) {
         var points = [];
@@ -279,6 +284,8 @@ const vis: SunburstVisualization = {
         .attr("text-anchor", "middle")
         .html(format(value))
         .style('font-weight', 'bold')
+
+      updateLabelWidth((breadcrumbStart + breadcrumbWidth(lastDim.data.name) + (b.s)) + 50 + breadcrumbWidth(format(value)))
 
       // Make the breadcrumb trail visible, if it's hidden.
       d3.select("#sunburst-breadcrumbs").select("#trail")
