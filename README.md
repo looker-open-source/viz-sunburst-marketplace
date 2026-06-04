@@ -1,11 +1,11 @@
 #  Sunburst
-**This is not an officially supported Google product.**
+
+This is not an officially supported Google product. This project is not eligible for the [Google Open Source Software Vulnerability Rewards Program](https://bughunters.google.com/open-source-security).
 
 This diagram creates a [sunburst](https://en.wikipedia.org/wiki/Pie_chart#Ring_chart_.2F_Sunburst_chart_.2F_Multilevel_pie_chart) to display hierarchical data in a nested structure.
 
 ### What if I find an error? Suggestions for improvements?
 Great! Marketplace content -- including visualizations -- were designed for continuous improvement through the help of the entire Looker community and we'd love your input. To report an error or improvement recommendation, please get in touch at help.looker.com to submit a request. Please be as detailed as possible in your explanation and we'll address it as quick as we can.
-
 
 ### Interested in extending the visualization for your own use case?
 #### Quickstart Dev Instructions
@@ -49,4 +49,3 @@ Great! Marketplace content -- including visualizations -- were designed for cont
 **`yarn.lock`**: [Yarn](https://yarnpkg.com/) is a package manager alternative to npm. This file serves essentially the same purpose as `package-lock.json`, just for a different package management system.
 
 **`tsconfig.json`**: A configuration file for the typescript -> javascript compiler.
-
