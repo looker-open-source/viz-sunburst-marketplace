@@ -133,12 +133,16 @@ const vis: SunburstVisualization = {
     this.svg = d3.select(element).append('svg').style('margin-top', "-25px")
   },
   // Render in response to the data or settings changing
-  update(data, element, config, queryResponse) {
-    if (!handleErrors(this, queryResponse, {
-      min_pivots: 0, max_pivots: 0,
-      min_dimensions: 1, max_dimensions: undefined,
-      min_measures: 1, max_measures: 1
-    })) return
+  updateAsync(data, element, config, queryResponse, details, done) {
+    try {
+      if (!handleErrors(this, queryResponse, {
+        min_pivots: 0, max_pivots: 0,
+        min_dimensions: 1, max_dimensions: undefined,
+        min_measures: 1, max_measures: 1
+      })) {
+        done()
+        return
+      }
 
     d3.select("#trail").remove()
 
@@ -314,14 +318,14 @@ const vis: SunburstVisualization = {
     .style('transition', (d: any) => 'fill-opacity 0.2s')
     .style('stroke', (d: any) => '#fff')
     .style('stroke-width', (d: any) => '0.5px')
-    .on('click', function (this: any, d: any) {
-      const event: object = { pageX: d3.event.pageX, pageY: d3.event.pageY }
+    .on('click', function (this: any, event: any, d: any) {
+      const clickEvent: object = { pageX: event.pageX, pageY: event.pageY }
       LookerCharts.Utils.openDrillMenu({
         links: d.data.links,
-        event: event
+        event: clickEvent
       })
     })
-    .on('mouseenter', (d: any) => {
+    .on('mouseenter', (event: any, d: any) => {
       var sequence = getAncestors(d)
       updateBreadcrumbs(sequence, d.value)
       if(config.show_percent){ center.text(` ${((d.value/total) * 100).toFixed(2).toString() + "%"}`) }
@@ -333,15 +337,26 @@ const vis: SunburstVisualization = {
         return ancestors.indexOf(p) > -1 ? 1 : 0.15
       })
     })
-    .on('mouseleave', (d: any) => {
+    .on('mouseleave', () => {
       d3.select("#sunburst-breadcrumbs").select("#trail")
 			.style("visibility", "hidden")
       center.text('')
-      //label.text('')
       svg
       .selectAll('path')
-      .style('fill-opacity', (d: any) => 1 - d.depth * 0.15)
+      .style('fill-opacity', (p: any) => 1 - p.depth * 0.15)
     })
+    done()
+    } catch (error) {
+      console.error(error)
+      if (this.addError) {
+        this.addError({
+          title: "Rendering Error",
+          message: (error as any).message,
+          group: "render"
+        })
+      }
+      done()
+    }
   }
 }
 
