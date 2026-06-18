@@ -13,7 +13,9 @@ import {
   LookerChartUtils,
   Row,
   VisConfig,
-  VisualizationDefinition
+  VisualizationDefinition,
+  VisQueryResponse,
+  VisUpdateDetails
 } from '../types'
 
 // Global values provided via the API
@@ -133,14 +135,21 @@ const vis: SunburstVisualization = {
     this.svg = d3.select(element).append('svg').style('margin-top', "-25px")
   },
   // Render in response to the data or settings changing
-  updateAsync(data, element, config, queryResponse, details, done) {
+  updateAsync(
+    data: Row[],
+    element: HTMLElement,
+    config: VisConfig,
+    queryResponse: VisQueryResponse,
+    details: VisUpdateDetails | undefined,
+    done?: () => void
+  ) {
     try {
       if (!handleErrors(this, queryResponse, {
         min_pivots: 0, max_pivots: 0,
         min_dimensions: 1, max_dimensions: undefined,
         min_measures: 1, max_measures: 1
       })) {
-        done()
+        done?.()
         return
       }
 
@@ -321,14 +330,17 @@ const vis: SunburstVisualization = {
     .on('click', function (this: any, event: any, d: any) {
       const clickEvent: object = { pageX: event.pageX, pageY: event.pageY }
       LookerCharts.Utils.openDrillMenu({
-        links: d.data.links,
+        links: d.data.links || [],
         event: clickEvent
       })
     })
     .on('mouseenter', (event: any, d: any) => {
       var sequence = getAncestors(d)
       updateBreadcrumbs(sequence, d.value)
-      if(config.show_percent){ center.text(` ${((d.value/total) * 100).toFixed(2).toString() + "%"}`) }
+      if (config.show_percent) {
+        const percent = total > 0 ? ((d.value / total) * 100).toFixed(2) : "0.00"
+        center.text(` ${percent}%`)
+      }
 
       const ancestors = d.ancestors()
       svg
@@ -345,7 +357,7 @@ const vis: SunburstVisualization = {
       .selectAll('path')
       .style('fill-opacity', (p: any) => 1 - p.depth * 0.15)
     })
-    done()
+    done?.()
     } catch (error) {
       console.error(error)
       if (this.addError) {
@@ -355,7 +367,7 @@ const vis: SunburstVisualization = {
           group: "render"
         })
       }
-      done()
+      done?.()
     }
   }
 }
