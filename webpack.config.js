@@ -8,6 +8,7 @@ var webpackConfig = {
     sunburst: './src/sunburst/sunburst.ts',
   },
   output: {
+    hashFunction: 'sha256',
     filename: "[name].js",
     path: __dirname,
     library: "[name]",
