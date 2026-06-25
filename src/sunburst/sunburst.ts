@@ -193,7 +193,7 @@ const vis: SunburstVisualization = {
       total += row[measure.name].value
     })
 
-    const partition = d3.partition().size([2 * Math.PI, radius * radius])
+    const partition = d3.partition<any>().size([2 * Math.PI, radius * radius])
     const arc = (
       d3.arc()
       .startAngle((d: any) => d.x0)
