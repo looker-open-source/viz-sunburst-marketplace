@@ -5,7 +5,7 @@
 
 import * as d3 from 'd3'
 import * as SSF from 'ssf'
-import { handleErrors }  from '../utils'
+import { handleErrors, parseColorRange } from '../utils'
 
 import {
   Link,
@@ -52,9 +52,9 @@ function descend(obj: any, depth: number = 0) {
   return arr
 }
 
-function burrow(table: Row[], config: VisConfig) {
-  // create nested object
-  const obj: any = {}
+function burrow(table: Row[], showNullPoints: boolean) {
+  // create nested null-prototype object to prevent Object.prototype key collisions
+  const obj: any = Object.create(null)
 
   table.forEach((row: Row) => {
     // start at root
@@ -62,11 +62,14 @@ function burrow(table: Row[], config: VisConfig) {
 
     // create children as nested objects
     row.taxonomy.value.forEach((key: any) => {
-      if (key === null && !config.show_null_points) {
+      if (key === null && !showNullPoints) {
         return
       }
-      layer[key] = key in layer ? layer[key] : {}
-      layer = layer[key]
+      const propKey = String(key)
+      layer[propKey] = Object.prototype.hasOwnProperty.call(layer, propKey)
+        ? layer[propKey]
+        : Object.create(null)
+      layer = layer[propKey]
     })
     layer.__data = row
   })
@@ -81,7 +84,10 @@ function burrow(table: Row[], config: VisConfig) {
 
 const getLinksFromRow = (row: Row): Link[] => {
   return Object.keys(row).reduce((links: Link[], datum) => {
-    if (row[datum].links) {
+    if (datum === 'taxonomy') {
+      return links
+    }
+    if (row[datum]?.links) {
       const datumLinks = row[datum].links as Link[]
       return links.concat(datumLinks)
     } else {
@@ -131,8 +137,14 @@ const vis: SunburstVisualization = {
   // Set up the initial state of the visualization
   create(element, _config) {
     element.style.fontFamily = `"Open Sans","Noto Sans JP","Noto Sans","Noto Sans CJK KR", "Helvetica" , "Arial" , "sans-serif"`
-    d3.select(element).append('div').attr('id','sunburst-breadcrumbs')
-    this.svg = d3.select(element).append('svg').style('margin-top', "-25px")
+    element.style.overflow = 'hidden'
+    d3.select(element)
+      .append('div')
+      .attr('id', 'sunburst-breadcrumbs')
+      .style('height', '36px')
+      .style('overflow-x', 'auto')
+      .style('overflow-y', 'hidden')
+    this.svg = d3.select(element).append('svg').style('display', 'block')
   },
   // Render in response to the data or settings changing
   updateAsync(
@@ -153,19 +165,40 @@ const vis: SunburstVisualization = {
         return
       }
 
-    d3.select("#trail").remove()
+    const rootContainer = d3.select(element)
+    const breadcrumbsContainer = rootContainer.select('#sunburst-breadcrumbs')
+    breadcrumbsContainer.selectAll('#trail').remove()
 
-    const width = element.clientWidth
-    const height = element.clientHeight
-    const radius = Math.min(width, height) / 2 - 8
+    const trailHeight = 36
+    const width = Math.max(0, element.clientWidth)
+    const height = Math.max(0, element.clientHeight)
+    const svgHeight = Math.max(0, height - trailHeight)
+    const radius = Math.max(0, Math.min(width, svgHeight) / 2 - 8)
 
     const dimensions = queryResponse.fields.dimension_like
     const measure = queryResponse.fields.measure_like[0]
     const default_value_format = measure.value_format || "#,##0"
-    const format = ((s: any): string => SSF.format(config.value_format_override !== "" ? config.value_format_override : default_value_format, s))
+    const overrideFormat = typeof config?.value_format_override === 'string'
+      ? config.value_format_override.trim()
+      : ''
+    const format = (s: any): string => {
+      const pattern = overrideFormat !== '' ? overrideFormat : default_value_format
+      try {
+        return SSF.format(pattern, s)
+      } catch {
+        return SSF.format(default_value_format, s)
+      }
+    }
 
-    const colorScale: d3.ScaleOrdinal<string, null> = d3.scaleOrdinal()
-    const color = colorScale.range(config.color_range || [])
+    const defaultColors: string[] = this.options.color_range.default
+    const parsedColors = parseColorRange(config?.color_range)
+    const effectiveColors = parsedColors.length > 0 ? parsedColors : defaultColors
+    const effectiveColorBy = config?.color_by ?? this.options.color_by.default
+    const showNullPoints = config?.show_null_points ?? this.options.show_null_points.default
+    const showPercent = config?.show_percent ?? this.options.show_percent.default
+
+    const colorScale = d3.scaleOrdinal<string, string>()
+    const color = colorScale.range(effectiveColors)
 
     const breadcrumbs = {
       w: 75,
@@ -202,34 +235,36 @@ const vis: SunburstVisualization = {
       .outerRadius((d: any) => Math.sqrt(d.y1))
     )
 
+    this.svg.selectAll('*').remove()
     const svg = (
       this.svg
-      .html('')
-      .attr('width', '100%')
-      .attr('height', '100%')
+      .attr('width', width)
+      .attr('height', svgHeight)
       .append('g')
-      .attr('transform', 'translate(' + width / 2 + ',' + height / 2 + ')')
+      .attr('transform', 'translate(' + width / 2 + ',' + svgHeight / 2 + ')')
     )
 
     const center = svg.append('text')
       .style("text-anchor", "middle")
       .style('dominant-baseline', 'middle')
-      .attr("font-size", Math.min(parseInt(d3.select('svg').style("width")), parseInt(d3.select("svg").style("height")))/12);
+      .attr("font-size", Math.max(12, Math.min(width, svgHeight) / 12));
     
     const getColorByNode = function(d: any){
       if (d.depth === 0) return 'none'
-      if (config.color_by === colorBy.NODE) {
-        return color(d.data.name)
+      if (effectiveColorBy === colorBy.NODE) {
+        return color(String(d.data.name))
       } else {
-        return color(d.ancestors().map((p: any) => p.data.name).slice(-2, -1))
+        const rootAncestor = d.ancestors().map((p: any) => p.data.name).slice(-2, -1)[0]
+        return color(String(rootAncestor ?? d.data.name))
       }
     }
 
-    const minLabelWidth = 750
-    const trail = d3.select("#sunburst-breadcrumbs").append("svg:svg")
+    const minLabelWidth = width
+    const trail = breadcrumbsContainer.append("svg:svg")
       .attr("width", minLabelWidth)
-      .attr("height", 50)
+      .attr("height", trailHeight)
       .attr("id", "trail")
+      .style("display", "block")
     trail.append("svg:text")
     .attr("id", "endlabel")
     .style("fill", "#000");
@@ -260,9 +295,12 @@ const vis: SunburstVisualization = {
     }
 
     const updateBreadcrumbs = (sequence: any[], value: any) =>{
+      if (!sequence || sequence.length === 0) {
+        return
+      }
 		  var b = breadcrumbs;
       // Data join; key function combines name and depth (= position in sequence).
-      var g = d3.select("#trail")
+      var g = trail
         .selectAll("g")
         .data(sequence, function(d: any) { return d.data.name + d.data.depth; })
 
@@ -287,31 +325,35 @@ const vis: SunburstVisualization = {
       // Set position for entering and updating nodes.
       var breadcrumbStart = 0;
       var lastDim: any;
-      d3.select("#trail").selectAll("g").attr("transform", (d: any, i: number) => {
+      trail.selectAll("g").attr("transform", (d: any, i: number) => {
         lastDim = d
         if(i >= dimensions.length) {return "translate(" + breadcrumbStart + ", 0)"}
         breadcrumbStart += (d.parent.data.name === "root"? 0 : (breadcrumbWidth(d.parent.data.name)) + b.s)
         return "translate(" + breadcrumbStart  + ", 0)"
       });
 
-      // Now move and update the percentage at the end.
-      d3.select("#sunburst-breadcrumbs").select("#trail").select("#endlabel")
+      if (!lastDim) {
+        return
+      }
+
+      // Now move and update the formatted measure value at the end.
+      const formattedValue = format(value)
+      trail.select("#endlabel")
         .attr("x", (breadcrumbStart + breadcrumbWidth(lastDim.data.name) + (b.s)) + 50  + "px")
         .attr("y", b.h / 2)
         .attr("dy", "0.35em")
         .attr("text-anchor", "middle")
-        .html(format(value))
+        .text(formattedValue)
         .style('font-weight', 'bold')
 
-      updateLabelWidth((breadcrumbStart + breadcrumbWidth(lastDim.data.name) + (b.s)) + 50 + breadcrumbWidth(format(value)))
+      updateLabelWidth((breadcrumbStart + breadcrumbWidth(lastDim.data.name) + (b.s)) + 50 + breadcrumbWidth(formattedValue))
 
       // Make the breadcrumb trail visible, if it's hidden.
-      d3.select("#sunburst-breadcrumbs").select("#trail")
-        .style("visibility", "");
+      trail.style("visibility", "");
     }
 
 
-    const root = d3.hierarchy(burrow(data, config)).sum((d: any) => {
+    const root = d3.hierarchy(burrow(data, showNullPoints)).sum((d: any) => {
       return 'data' in d ? d.data[measure.name].value : 0
     })
     partition(root)
@@ -328,6 +370,7 @@ const vis: SunburstVisualization = {
     .style('stroke', (d: any) => '#fff')
     .style('stroke-width', (d: any) => '0.5px')
     .on('click', function (this: any, event: any, d: any) {
+      if (d.depth === 0) return
       const clickEvent: object = { pageX: event.pageX, pageY: event.pageY }
       LookerCharts.Utils.openDrillMenu({
         links: d.data.links || [],
@@ -335,9 +378,10 @@ const vis: SunburstVisualization = {
       })
     })
     .on('mouseenter', (event: any, d: any) => {
+      if (d.depth === 0) return
       var sequence = getAncestors(d)
       updateBreadcrumbs(sequence, d.value)
-      if (config.show_percent) {
+      if (showPercent) {
         const percent = total > 0 ? ((d.value / total) * 100).toFixed(2) : "0.00"
         center.text(` ${percent}%`)
       }
@@ -350,8 +394,7 @@ const vis: SunburstVisualization = {
       })
     })
     .on('mouseleave', () => {
-      d3.select("#sunburst-breadcrumbs").select("#trail")
-			.style("visibility", "hidden")
+      trail.style("visibility", "hidden")
       center.text('')
       svg
       .selectAll('path')
