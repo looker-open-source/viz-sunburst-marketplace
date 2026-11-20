@@ -96,6 +96,14 @@ const getLinksFromRow = (row: Row): Link[] => {
   }, [])
 }
 
+const getNumericMeasureValue = (cell: any): number => {
+  if (!cell || cell.value === null || cell.value === undefined || typeof cell.value === 'boolean') {
+    return 0
+  }
+  const n = Number(cell.value)
+  return Number.isFinite(n) ? n : 0
+}
+
 
 
 const vis: SunburstVisualization = {
@@ -141,7 +149,7 @@ const vis: SunburstVisualization = {
     d3.select(element)
       .append('div')
       .attr('id', 'sunburst-breadcrumbs')
-      .style('height', '36px')
+      .style('height', '48px')
       .style('overflow-x', 'auto')
       .style('overflow-y', 'hidden')
     this.svg = d3.select(element).append('svg').style('display', 'block')
@@ -169,10 +177,10 @@ const vis: SunburstVisualization = {
     const breadcrumbsContainer = rootContainer.select('#sunburst-breadcrumbs')
     breadcrumbsContainer.selectAll('#trail').remove()
 
-    const trailHeight = 36
+    const breadcrumbsHeight = 48
     const width = Math.max(0, element.clientWidth)
     const height = Math.max(0, element.clientHeight)
-    const svgHeight = Math.max(0, height - trailHeight)
+    const svgHeight = Math.max(0, height - breadcrumbsHeight)
     const radius = Math.max(0, Math.min(width, svgHeight) / 2 - 8)
 
     const dimensions = queryResponse.fields.dimension_like
@@ -186,7 +194,14 @@ const vis: SunburstVisualization = {
       try {
         return SSF.format(pattern, s)
       } catch {
-        return SSF.format(default_value_format, s)
+        if (pattern !== default_value_format) {
+          try {
+            return SSF.format(default_value_format, s)
+          } catch {
+            return String(s ?? '')
+          }
+        }
+        return String(s ?? '')
       }
     }
 
@@ -217,13 +232,11 @@ const vis: SunburstVisualization = {
       return path;
     }
 
-    var total = 0
     data.forEach(row => {
       row.taxonomy = {
         links: getLinksFromRow(row),
         value: dimensions.map((dimension) => row[dimension.name].value)
       }
-      total += row[measure.name].value
     })
 
     const partition = d3.partition<any>().size([2 * Math.PI, radius * radius])
@@ -262,7 +275,7 @@ const vis: SunburstVisualization = {
     const minLabelWidth = width
     const trail = breadcrumbsContainer.append("svg:svg")
       .attr("width", minLabelWidth)
-      .attr("height", trailHeight)
+      .attr("height", breadcrumbs.h)
       .attr("id", "trail")
       .style("display", "block")
     trail.append("svg:text")
@@ -354,8 +367,9 @@ const vis: SunburstVisualization = {
 
 
     const root = d3.hierarchy(burrow(data, showNullPoints)).sum((d: any) => {
-      return 'data' in d ? d.data[measure.name].value : 0
+      return 'data' in d && d.data ? getNumericMeasureValue(d.data[measure.name]) : 0
     })
+    const total = root.value ?? 0
     partition(root)
 
     svg

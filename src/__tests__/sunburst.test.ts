@@ -215,11 +215,11 @@ describe('Sunburst Visualization', () => {
     arcs[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(drillMock).not.toHaveBeenCalled();
 
-    // Verify XSS payload inside value_format_override is rendered as text, never parsed as HTML
+    // Verify markup inside value_format_override is rendered as plain text, never parsed as HTML
     vis.updateAsync(
       data,
       element,
-      { value_format_override: '"<img src=x onerror=1>"#,##0', show_percent: false, show_null_points: false },
+      { value_format_override: '"<b>tag</b>"#,##0', show_percent: false, show_null_points: false },
       queryResponse,
       undefined,
       doneCallback
@@ -229,8 +229,8 @@ describe('Sunburst Visualization', () => {
     expect(updatedArcs.length).toBe(4);
     updatedArcs[1].dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
     const endLabel2 = element.querySelector('#endlabel');
-    expect(endLabel2?.querySelectorAll('img')).toHaveLength(0);
-    expect(endLabel2?.textContent).toContain('<img src=x onerror=1>');
+    expect(endLabel2?.querySelectorAll('b')).toHaveLength(0);
+    expect(endLabel2?.textContent).toContain('<b>tag</b>');
     // show_percent: false keeps center text blank
     const centerText2 = element.querySelector('svg:not(#trail) > g > text');
     expect(centerText2?.textContent).toBe('');
@@ -238,5 +238,102 @@ describe('Sunburst Visualization', () => {
     // Clicking leaf arc with links invokes LookerCharts.Utils.openDrillMenu
     updatedArcs[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(drillMock).toHaveBeenCalledWith(expect.objectContaining({ links }));
+  });
+
+  it('falls back to default format or String(s ?? "") when SSF.format throws', () => {
+    vis.create(element, {});
+    vis.addError = jest.fn();
+    vis.clearErrors = jest.fn();
+
+    const data = [
+      { dim1: { value: 'A' }, meas1: { value: 42 } },
+    ];
+    const queryResponseWithInvalidDefault = {
+      fields: {
+        pivots: [],
+        dimensions: [{ name: 'dim1' }],
+        dimension_like: [{ name: 'dim1' }],
+        measure_like: [{ name: 'meas1', value_format: '"unterminated' }],
+      },
+    };
+
+    // Both override and default throw -> falls back cleanly to String(s ?? '')
+    vis.updateAsync(
+      data,
+      element,
+      { value_format_override: '"also_unterminated' },
+      queryResponseWithInvalidDefault,
+      undefined,
+      doneCallback
+    );
+
+    const arcs = Array.from(element.querySelectorAll('svg:not(#trail) path'));
+    expect(() => {
+      arcs[1].dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    }).not.toThrow();
+
+    expect(element.querySelector('#endlabel')?.textContent).toBe('42');
+    expect(vis.addError).not.toHaveBeenCalled();
+
+    // Invalid override with valid default -> falls back to default_value_format
+    const queryResponseWithValidDefault = {
+      fields: {
+        pivots: [],
+        dimensions: [{ name: 'dim1' }],
+        dimension_like: [{ name: 'dim1' }],
+        measure_like: [{ name: 'meas1', value_format: '$#,##0.0' }],
+      },
+    };
+    vis.updateAsync(
+      data,
+      element,
+      { value_format_override: '"unterminated' },
+      queryResponseWithValidDefault,
+      undefined,
+      doneCallback
+    );
+    const arcs2 = Array.from(element.querySelectorAll('svg:not(#trail) path'));
+    arcs2[1].dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    expect(element.querySelector('#endlabel')?.textContent).toBe('$42.0');
+  });
+
+  it('handles missing, null, non-numeric, and numeric-string measure cells and derives total from root.value', () => {
+    vis.create(element, {});
+    vis.addError = jest.fn();
+    vis.clearErrors = jest.fn();
+
+    const data: any[] = [
+      { dim1: { value: 'Valid' }, meas1: { value: 50 } },
+      { dim1: { value: 'NumericString' }, meas1: { value: '50' } },
+      { dim1: { value: 'MissingCell' } },
+      { dim1: { value: 'NullCell' }, meas1: null },
+      { dim1: { value: 'NullValue' }, meas1: { value: null } },
+      { dim1: { value: 'BoolValue' }, meas1: { value: true } },
+      { dim1: { value: 'StringValue' }, meas1: { value: 'not-a-number' } },
+      { dim1: { value: 'NaNValue' }, meas1: { value: NaN } },
+    ];
+    const queryResponse = {
+      fields: {
+        pivots: [],
+        dimensions: [{ name: 'dim1' }],
+        dimension_like: [{ name: 'dim1' }],
+        measure_like: [{ name: 'meas1', value_format: '#,##0' }],
+      },
+    };
+
+    vis.updateAsync(data, element, {}, queryResponse, undefined, doneCallback);
+
+    expect(doneCallback).toHaveBeenCalled();
+    expect(vis.addError).not.toHaveBeenCalled();
+
+    const arcs = Array.from(element.querySelectorAll('svg:not(#trail) path'));
+    // Valid (50) and NumericString ('50' -> 50) each represent 50.00% of total = 100
+    arcs[1].dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    expect(element.querySelector('svg:not(#trail) > g > text')?.textContent).toBe(' 50.00%');
+    expect(element.querySelector('#endlabel')?.textContent).toBe('50');
+
+    arcs[2].dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    expect(element.querySelector('svg:not(#trail) > g > text')?.textContent).toBe(' 50.00%');
+    expect(element.querySelector('#endlabel')?.textContent).toBe('50');
   });
 });
