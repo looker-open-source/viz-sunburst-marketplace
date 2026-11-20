@@ -1,4 +1,4 @@
-import { handleErrors } from '../utils';
+import { handleErrors, parseColorRange } from '../utils';
 
 describe('handleErrors', () => {
   let mockVis: any;
@@ -68,5 +68,38 @@ describe('handleErrors', () => {
 
     expect(result).toBe(true);
     expect(mockVis.clearErrors).toHaveBeenCalled();
+  });
+});
+
+describe('parseColorRange', () => {
+  it('normalizes multi-element arrays, Looker comma-separated single-element arrays, and raw strings', () => {
+    expect(parseColorRange(['#E91E63', '#00BCD4'])).toEqual(['#E91E63', '#00BCD4']);
+    expect(parseColorRange(['#E91E63, #00BCD4, #4CAF50'])).toEqual([
+      '#E91E63',
+      '#00BCD4',
+      '#4CAF50',
+    ]);
+    expect(parseColorRange('#E91E63, #00BCD4')).toEqual(['#E91E63', '#00BCD4']);
+  });
+
+  it('preserves commas inside CSS functional colors and strips surrounding quotes', () => {
+    expect(
+      parseColorRange([
+        '"#E91E63", \'#00BCD4\', rgb(233, 30, 99), rgba(0, 188, 212, 0.8), hsl(122, 39%, 49%)',
+      ])
+    ).toEqual([
+      '#E91E63',
+      '#00BCD4',
+      'rgb(233, 30, 99)',
+      'rgba(0, 188, 212, 0.8)',
+      'hsl(122, 39%, 49%)',
+    ]);
+  });
+
+  it('returns empty array for null, undefined, empty arrays, and blank strings', () => {
+    expect(parseColorRange(null)).toEqual([]);
+    expect(parseColorRange(undefined)).toEqual([]);
+    expect(parseColorRange([])).toEqual([]);
+    expect(parseColorRange(['', ' , '])).toEqual([]);
   });
 });

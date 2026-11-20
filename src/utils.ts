@@ -39,3 +39,54 @@ export const handleErrors = (vis: VisualizationDefinition, res: VisQueryResponse
    && check('dim-req', 'Dimension', dimensions.length, options.min_dimensions, options.max_dimensions)
    && check('mes-req', 'Measure', measures.length, options.min_measures, options.max_measures))
 }
+
+const splitTopLevelCommas = (input: string): string[] => {
+  const parts: string[] = []
+  let current = ''
+  let parenDepth = 0
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i]
+    if (ch === '(') {
+      parenDepth++
+      current += ch
+    } else if (ch === ')') {
+      parenDepth = Math.max(0, parenDepth - 1)
+      current += ch
+    } else if (ch === ',' && parenDepth === 0) {
+      parts.push(current)
+      current = ''
+    } else {
+      current += ch
+    }
+  }
+  parts.push(current)
+  return parts
+}
+
+export const parseColorRange = (colorRange: unknown): string[] => {
+  const rawItems = Array.isArray(colorRange)
+    ? colorRange
+    : typeof colorRange === 'string'
+      ? [colorRange]
+      : []
+
+  const parsed: string[] = []
+  rawItems.forEach((item) => {
+    if (typeof item !== 'string') return
+    splitTopLevelCommas(item).forEach((token) => {
+      let cleaned = token.trim()
+      while (
+        cleaned.length >= 2 &&
+        ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+          (cleaned.startsWith("'") && cleaned.endsWith("'")))
+      ) {
+        cleaned = cleaned.slice(1, -1).trim()
+      }
+      if (cleaned.length > 0) {
+        parsed.push(cleaned)
+      }
+    })
+  })
+  return parsed
+}
